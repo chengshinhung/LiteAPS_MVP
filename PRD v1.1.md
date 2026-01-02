@@ -1,0 +1,17 @@
+產品需求文件 (PRD): LiteAPS - 互動式生產排程模擬平台版本：v1.0 (MVP Planning)狀態：草案 (Draft)日期：2026-01-02架構師：系統設計宗師1. 專案概述 (Executive Summary)1.1 背景與痛點傳統 APS (Advanced Planning and Scheduling) 系統過於複雜、昂貴，且往往淪為無法落地的黑盒子。中小企業或特定工廠現場往往需要一個「決策輔助工具」，而非全自動化系統。目前的痛點在於 ERP 資料難以直接轉化為視覺化的生產計畫，且缺乏彈性的「試算」空間。1.2 產品願景打造一個 Web 版的 「排程畫布 (Scheduling Canvas)」。本系統不追求數學上的絕對最佳解，而是提供一個高度彈性、視覺化、可互動的模擬沙盒。使用者透過簡易的資料匯入（CSV/API），利用系統進行快速試算與情境模擬 (Scenario Planning)，最終產出可執行的生產計畫。1.3 核心價值低門檻 (Low Barrier)：支援 CSV 彈性匯入，不強制綁定特定 ERP。高互動 (Interactive)：拖拉式甘特圖，支援「鎖定/釘選」的人機協作模式。體驗佳 (Gamified UX)：運算過程具備教育性質的過場提示，降低等待焦慮。技術務實 (Pragmatic)：基於 C# 與 SQL 的高效運算，針對 1,000 張工單量級優化。2. 使用者角色 (User Personas)角色職責核心需求生管人員 (Planner)負責每日/每週生產排程需要一個「畫布」來將 ERP 的死板資料變成圖表，並能手動調整急單插隊。生產經理 (Manager)決策產能配置與加班需要比較不同方案 (Scenario A vs B)，例如：「若週六加班，能多出多少貨？」IT/系統整合商負責資料串接需要簡單的 API 介面與資料 Mapping 機制，將 ERP 資料倒進系統。3. 功能需求 (Functional Requirements)3.1 專案與方案管理 (Scenario Management)方案建立：使用者可建立新的排程專案（如：「2026-W01 排程」）。方案複製 (Clone)：支援將現有方案完整複製（包含已排定的結果），用於進行 A/B Test（如：複製方案 A 成為方案 B，在方案 B 中增加機台產能）。併發控制 (Concurrency Lock)：當使用者開啟某方案進行編輯時，系統需鎖定該方案。其他使用者僅能以「唯讀模式」檢視，避免資料衝突。3.2 資料匯入與處理 (Data Ingestion)彈性匯入：支援 CSV 檔案上傳。支援 RESTful API 傳入 JSON 資料。RawData 儲存：每次匯入的資料視為該方案的「素材」，存入 RawData 表，不直接覆寫主檔，確保方案獨立性。必要欄位對應：工單號、產品、數量、預計交期、優先權、可用機台、標準工時。3.3 排程核心邏輯 (Simulation Engine)參數設定：排程方向：正向排程 (Forward)、逆向排程 (Backward)。排序策略：交期優先 (EDD)、優先權優先 (Priority)、最短工時優先 (SPT)。人機協作邏輯 (Hybrid Logic)：鎖定檢查：運算前，先保留使用者手動「釘選 (Pinned)」的工單位置。自動填空：演算法僅針對「未釘選」的工單，尋找剩餘的空閒時段 (Free Slots) 進行填入。計算量級：目標支援單次 1,000 張工單，運算時間控制在 20-30 秒內。3.4 視覺化與互動 (Visualization & Interaction)互動式甘特圖：Y 軸為機台 (Resource)，X 軸為時間。支援滑鼠拖曳 (Drag & Drop) 調整工單時間或更換機台。支援右鍵選單：鎖定/解鎖、查看詳情。過場動畫 (Loading Experience)：使用跑馬燈/文字輪播顯示進度。內容設計：顯示排程知識或提示（例如：「提示：減少換線次數可提升 5% 稼動率」）。4. 系統架構與技術選型 (System Architecture)4.1 技術堆疊 (Tech Stack)前端 (Frontend)：Framework: ReactLanguage: TypeScriptUI Library: Material UI or Ant DesignChart: React Big Calendar 或 DHTMLX Gantt (依預算決定)後端 (Backend)：Framework: ASP.NET Core 8 WebAPILanguage: C#Real-time: SignalR (用於推播計算進度與鎖定狀態)資料庫 (Database)：Engine: SQL Server (or PostgreSQL)ORM: Entity Framework Core (EF Core)Optimization: 使用 Bulk Insert 處理大量排程結果寫入。4.2 系統架構圖 (Mermaid)程式碼片段graph TD
+User[使用者] -->|Web UI| FE[React Frontend]
+FE -->|HTTP / REST| API[C# WebAPI]
+FE -->|WebSocket| SignalR[SignalR Hub]
+subgraph "Backend Services"
+API -->|1. Check-in/Lock| LockMgr[Lock Manager (Memory/Redis)]
+API -->|2. Data Access| DB[(SQL Database)]
+API -->|3. Simulation| Logic[In-Memory Scheduler Logic]
+end
+Logic -- Calculation Steps --> SignalR
+SignalR -- Progress Tips --> FE
+subgraph "Data Flow"
+CSV[CSV/ERP Data] -->|Import| DB
+DB -->|Load Raw Data| Logic
+Logic -->|Bulk Insert Results| DB
+end
+5. 資料模型設計概念 (High-Level Schema)Projects (專案/方案表): ProjectID, Name, Status, CreatedBy, IsLocked, LockedBy, LastUpdatedRawInputs (原始素材表): InputID, ProjectID, DataType (Order/Machine), JsonContent (彈性存放 CSV 內容)ScheduleResults (排程結果表):ResultIDProjectID (FK)WorkOrderIDMachineIDStartTimeEndTimeIsPinned (布林值，標記是否被使用者手動鎖定)6. 非功能性需求 (Non-Functional Requirements)效能：1,000 張工單的排程計算需在 30 秒內完成並回傳結果。併發性：同一方案在同一時間只能有一人編輯（Pessimistic Locking）。相容性：Web 端需支援 Chrome, Edge 主流瀏覽器。7. 執行路線圖 (Roadmap)Phase 1: MVP (最小可行性產品)完成資料庫 Schema 設計。實作 CSV 匯入至 RawInputs。實作 C# 核心邏輯：讀取資料 -> 簡單正向排程 (EDD) -> 寫回 DB。前端展示靜態甘特圖。Phase 2: 互動與模擬 (Interaction)實作前端拖拉功能與 IsPinned 狀態回寫 API。實作「人機協作邏輯」：重算時避開 Pinned 工單。整合 SignalR 跑馬燈過場效果。Phase 3: 方案管理 (Scenario)實作方案 Clone 與鎖定機制。匯出排程結果 (Excel/API)。
